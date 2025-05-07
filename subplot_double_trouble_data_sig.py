@@ -1,4 +1,3 @@
-import argparse
 import sys
 import os
 import xarray as xr
@@ -10,6 +9,8 @@ import cartopy.feature as cfeature
 import cartopy.crs as ccrs
 from cartopy.util import add_cyclic
 from cartopy.mpl.gridliner import LATITUDE_FORMATTER, LONGITUDE_FORMATTER
+from cartopy.mpl.ticker import (LongitudeFormatter, LatitudeFormatter,
+                                LatitudeLocator, LongitudeLocator)
 import scipy.ndimage as ndimage
 from contextlib import redirect_stdout
 
@@ -111,11 +112,11 @@ def get_colormap(cmap_name):
 #-#----------------------------------
 
 def create_line_subplot(ax,xdata,ydata,
-        xlabel='', ylabel='', title=None,
+        xlabel='', ylabel='', title=None, title_size=None,
         gridline_pattern=None,
-        label_size: float|list[float,float] = 5,
-        tick_size:  float|list[float,float] = 5,
-        numticks:   int|list[int,int] = 5,
+        label_size: list[float,float] = [],
+        numticks:   list[int,int] = [],
+        tick_size:  list[float,float] = [],
         **kwargs):
     """
     Create a single line subplot. Used to plot Factor Scores from PCA.
@@ -131,8 +132,9 @@ def create_line_subplot(ax,xdata,ydata,
         marker: Marker pattern for data points
         linestyle: dash pattern to draw lines
         linewidth: width of line
-        x_label_size: x label size
-        y_label_size: y label size
+        label_size: X and Y label size
+        numticks: X and Y number of ticks
+        tick_size: X and Y tick size
     
     Returns:
         p: a list of Line2D representing the plot
@@ -142,33 +144,28 @@ def create_line_subplot(ax,xdata,ydata,
     p = ax.plot(xdata,ydata,**kwargs)
 
 
-
     # Changing plot text parameters
 
-    if isinstance(label_size,list):
+    if label_size:
         ax.set_xlabel(xlabel,fontsize=label_size[0])
         ax.set_ylabel(ylabel,fontsize=label_size[1])
-    else:
-        ax.set_xlabel(xlabel,fontsize=label_size)
-        ax.set_ylabel(ylabel,fontsize=label_size)
 
-    if isinstance(tick_size,list):
-        ax.tick_params(axis='x', which='major', labelsize=tick_size[0])
-        ax.tick_params(axis='y', which='major', labelsize=tick_size[1])
-    else:
-        ax.tick_params(axis='both', which='major', labelsize=tick_size)
-
-    if isinstance(numticks,list):
+    if numticks:
         ax.xaxis.set_major_locator(mpl.ticker.MaxNLocator(numticks[0]))
         ax.yaxis.set_major_locator(mpl.ticker.MaxNLocator(numticks[1]))
-    else:
-        ax.xaxis.set_major_locator(mpl.ticker.MaxNLocator(numticks))
-        ax.yaxis.set_major_locator(mpl.ticker.MaxNLocator(numticks))
 
-    if gridline_pattern is not None:
+    if tick_size:
+       ax.tick_params(axis='x', which='major', labelsize=tick_size[0])
+       ax.tick_params(axis='y', which='major', labelsize=tick_size[1])
+
+    if gridline_pattern:
         ax.grid(linestyle=gridline_pattern)
 
-    if title: ax.set_title(title)
+    if title:
+        if title_size:
+            ax.set_title(title,fontsize=title_size)
+        else:
+            ax.set_title(title)
     
 
 
@@ -177,8 +174,9 @@ def create_line_subplot(ax,xdata,ydata,
 def create_subplot(ax, data, sig, lon_grid, lat_grid, colormap,
         levels, siglevel, extent='global', mask=None,
         ccolor='k', hcolor='k', hatch_pattern='..',
-        is_leftmost=False, is_bottom=False, title=None,
-        gridline_pattern=None,lon_label_size=9,lat_label_size=9):
+        is_leftmost=False, is_bottom=False, title=None, title_size=None,
+        gridline_pattern=None, gridline_width=0.5,
+        lon_label_size=9,lat_label_size=9):
     """
     Create a single subplot with the given data and settings.
     
@@ -197,6 +195,7 @@ def create_subplot(ax, data, sig, lon_grid, lat_grid, colormap,
         is_leftmost: Whether this subplot is in the leftmost column
         is_bottom: Whether this subplot is in the bottom row
         title: Optional subtitle for this subplot
+        title_size: Size of subtitle
         gridline_pattern: dash pattern to draw gridlines, if None: hide gridlines
         lon_label_size: longitude label size
         lat_label_size: latitude label size
@@ -218,11 +217,15 @@ def create_subplot(ax, data, sig, lon_grid, lat_grid, colormap,
 
 
 
-    if 'ams' in extent:
+    extent = extent.lower().split()
+    if len(extent) == 1 and 'ams' in extent:
         ax.set_extent([-83.75, -31.25, -45, 15],ccrs.PlateCarree())
-    elif isinstance(extent,(list,tuple)) and len(extent) == 4:
-        ax.set_extent(extent,ccrs.PlateCarree())
+    elif len(extent) == 1 and 'global' in extent:
+        ax.set_global()
+    elif len(extent) == 4:
+        ax.set_extent([float(e) for e in extent],ccrs.PlateCarree())
     else:
+        print(f"Warning: invalid extent '{extent}'. using global extent.",file=sys.stderr)
         ax.set_global()
 
 
@@ -254,7 +257,8 @@ def create_subplot(ax, data, sig, lon_grid, lat_grid, colormap,
     else:
         show_gridlines = True
 
-    g1 = ax.gridlines(crs=ccrs.PlateCarree(), linestyle=gridline_pattern, linewidth=0.5, color='k', draw_labels=True, visible=show_gridlines)
+
+    g1 = ax.gridlines(crs=ccrs.PlateCarree(), linestyle=gridline_pattern, linewidth=gridline_width, color='k', draw_labels=True, visible=show_gridlines)
     g1.zorder = 101
     g1.right_labels = False
     g1.top_labels = False
@@ -267,7 +271,12 @@ def create_subplot(ax, data, sig, lon_grid, lat_grid, colormap,
     g1.xlabel_style = {'size': lon_label_size}
     g1.ylabel_style = {'size': lat_label_size}
 
-    if title: ax.set_title(title)
+
+    if title:
+        if title_size:
+            ax.set_title(title,fontsize=title_size)
+        else:
+            ax.set_title(title)
     
     return p
 
@@ -287,8 +296,8 @@ class TrackedDict(dict):
 
 def main(
         input_files : list[str|os.PathLike],
-        sig_files   : list[str|os.PathLike],
         output_file : str|os.PathLike,
+        sig_files   : list[str|os.PathLike] = None,
         quiet=False,
         **kwargs,
     ) -> None :
@@ -297,7 +306,7 @@ def main(
     input_args = TrackedDict(kwargs)
 
     # Defining some dafault values
-    levels = [-1.2, -1, -0.8, -0.6, -0.4, -0.2, 0, 0.2, 0.4, 0.6, 0.8, 1, 1.2]
+    levels_str = "-1.2 -1 -0.8 -0.6 -0.4 -0.2 0 0.2 0.4 0.6 0.8 1 1.2"
 
     # Setting the default values
 
@@ -326,7 +335,8 @@ def main(
     extent          = input_args.get('extent'                   , 'global')
     mask            = input_args.get('mask'                     , None)
     gridline        = input_args.get('gridline_pattern'         , None)
-    levels          = input_args.get('levels'                   , levels)
+    gridline_width  = float(input_args.get('gridline_width'     , 0.5))
+    levels          = input_args.get('levels'                   , levels_str)
     use_levels_in_p = input_args.get('use_levels_in_plots'      , [])
     cmap            = str(input_args.get('cmap'                 , 'RdBu'))
     use_cmap_in_p   = input_args.get('use_cmap_in_plots'        , [])
@@ -336,6 +346,8 @@ def main(
     cbar_padding    = float(input_args.get('cbar_padding'       , 0.0))
     cbar_border     = float(input_args.get('cbar_border'        , 0.0))
     cbar_offset     = float(input_args.get('cbar_offset'        , 0.0))
+    cbar_xoffset    = float(input_args.get('cbar_xoffset'       , 0.0))
+    cbar_yoffset    = float(input_args.get('cbar_yoffset'       , 0.0))
     multi_cbar      = input_args.get('multi_cbar'               , [])
 
     # plot txt options
@@ -344,6 +356,7 @@ def main(
     suptitle_offset     = float(input_args.get('suptitle_offset'    , 0.0))
     suptitle_size       = float(input_args.get('suptitle_size'      , 18))
     subtitles           = input_args.get('subtitles'                , None)
+    subtitles_size      = input_args.get('subtitles_size'           , None)
     row_titles          = input_args.get('row_titles'               , None)
     row_titles_offset   = float(input_args.get('row_titles_offset'  , 0.01))
     row_titles_size     = float(input_args.get('row_titles_size'    , 12))
@@ -355,18 +368,18 @@ def main(
     labels_yoffset      = float(input_args.get('labels_yoffset'     , 0.012))
     labels_size         = float(input_args.get('labels_size'        , 9))
     lat_label_size      = float(input_args.get('lat_label_size'     , 9))
-    lon_label_size      = float(input_args.get('lat_label_size'     , 9))
-    cbar_label          = input_args.get('cbar_label'               , None)
+    lon_label_size      = float(input_args.get('lon_label_size'     , 9))
+    cbar_labels         = input_args.get('cbar_labels'              , [])
 
     # lineplot options
     line_linestyle  = input_args.get('line_style'       , '-')
     line_color      = input_args.get('line_color'       , 'k')
     line_width      = input_args.get('line_width'       , 1)
     line_marker     = input_args.get('line_marker'      , '.')
-    line_tick_size  = input_args.get('line_tick_size'   , 5)
-    line_numticks   = input_args.get('line_numticks'    , [8,5])
-    line_labels     = input_args.get('line_labels'      , ['',''])
-    line_label_size = input_args.get('line_label_size'  , 6)
+    line_tick_size  = input_args.get('line_tick_size'   , [5 , 5 ])
+    line_numticks   = input_args.get('line_numticks'    , [8 , 5 ])
+    line_labels     = input_args.get('line_labels'      , ['', ''])
+    line_label_size = input_args.get('line_label_size'  , [6 , 6 ])
     line_gridline   = input_args.get('line_gridline'    , '--')
 
 
@@ -391,6 +404,8 @@ def main(
         print("---------------------------")
 
 
+    levels = [float(l) for l in levels.split()]
+
     if wspace: wspace = float(wspace)
     if hspace: hspace = float(hspace)
     if hatch_pattern: hatch_pattern = str(hatch_pattern)
@@ -409,7 +424,7 @@ def main(
         for p in plots.split():
             use_levels_dict[int(p)] = extra_levels.split()
 
-    # storing extra levels in dict
+    # storing extra cmaps in dict
     use_cmap_dict = {}
     for entry in use_cmap_in_p:
         extra_cmap,plots = entry.split(':', 1)
@@ -468,7 +483,7 @@ def main(
                 # Open text file
                 df = pd.read_csv(input_files[i],sep='\s+')
                 p = create_line_subplot(ax,df.iloc[:,0].copy(),df.iloc[:,1].copy(),
-                        xlabel=line_labels[0],ylabel=line_labels[1], title=subtitle,
+                        xlabel=line_labels[0],ylabel=line_labels[1], title=subtitle, title_size=subtitles_size,
                         gridline_pattern=line_gridline,
                         linestyle=line_linestyle,color=line_color,marker=line_marker,linewidth=line_width,
                         numticks=line_numticks,label_size=line_label_size,tick_size=line_tick_size)
@@ -528,7 +543,7 @@ def main(
 
                 p = create_subplot(ax, data_val, sig, lon_grid, lat_grid, c, l, siglevel, extent,
                         mask, ccolor, hcolor, hatch_pattern, is_leftmost, is_bottom,
-                        subtitle, gridline, lon_label_size, lat_label_size)
+                        subtitle, subtitles_size, gridline, gridline_width, lon_label_size, lat_label_size)
 
             # Save the plots for plotting the cbar later
             all_plots.append(p)
@@ -540,9 +555,9 @@ def main(
         l, b, w, h = ax.get_position().bounds
         # Get labels if provided
         if labels and i < len(labels):
-            fig.text(l+w+labels_xoffset, b+labels_yoffset, labels[i],
+            fig.text(1+labels_xoffset, 0+labels_yoffset, labels[i],
                     ha='right',va='bottom',fontsize=labels_size, family=tfont,
-                    backgroundcolor='white')
+                    backgroundcolor='white',transform=ax.transAxes)
         # Get col title if provided
         if row == 0 and col_titles and col < len(col_titles):
             txt_ypos=b + h
@@ -569,27 +584,27 @@ def main(
             for i,cbar_index in enumerate(multi_cbar):
 
                 # if we can plot a cbar
-                if cbar_index < len(all_plots) and hasattr(all_plots[cbar_index],'cmap'):
+                if cbar_index > 0 and cbar_index < len(all_plots) and hasattr(all_plots[cbar_index],'cmap'):
 
                     # change cbar size based on orientation
                     if cbar_orientation == 'vertical':
-                        cbar_ax = fig.add_axes([0.92, pos[i]+cbar_padding+cbar_offset, 0.02, size-cbar_padding*2])  # [left, bottom, width, height]
+                        cbar_ax = fig.add_axes([0.92+cbar_xoffset, pos[i]+cbar_padding+cbar_offset+cbar_yoffset, 0.02, size-cbar_padding*2])  # [left, bottom, width, height]
                     elif cbar_orientation == 'horizontal':
-                        cbar_ax = fig.add_axes([pos[i]+cbar_padding+cbar_offset, 0.05, size-cbar_padding*2, 0.02])  # [left, bottom, width, height]
+                        cbar_ax = fig.add_axes([pos[i]+cbar_padding+cbar_offset+cbar_xoffset, 0.05+cbar_yoffset, size-cbar_padding*2, 0.02])  # [left, bottom, width, height]
 
-                    cbar = fig.colorbar(all_plots[cbar_index], cax=cbar_ax, orientation=cbar_orientation, label=cbar_label)
+                    cbar = fig.colorbar(all_plots[cbar_index], cax=cbar_ax, orientation=cbar_orientation, label = cbar_labels[i] if i < len(cbar_labels) else None)
                 else:
                     print(f"Warning: index [{cbar_index}] is out of bounds (max {len(all_plots)}) or does not have a colormap. Skipping.",file=sys.stderr)
         else:
             # Add single colorbar for all subplots
             if cbar_orientation == 'vertical':
-                cbar_ax = fig.add_axes([0.92, 0.3+cbar_offset+cbar_padding, 0.02, 0.4-cbar_padding*2])  # [left, bottom, width, height]
+                cbar_ax = fig.add_axes([0.92+cbar_xoffset, 0.3+cbar_offset+cbar_padding+cbar_yoffset, 0.02, 0.4-cbar_padding*2])  # [left, bottom, width, height]
             elif cbar_orientation == 'horizontal':
-                cbar_ax = fig.add_axes([0.25+cbar_offset+cbar_padding, 0.05, 0.5-cbar_padding*2, 0.02])  # [left, bottom, width, height]
+                cbar_ax = fig.add_axes([0.25+cbar_padding+cbar_offset+cbar_xoffset, 0.05+cbar_yoffset, 0.5-cbar_padding*2, 0.02])  # [left, bottom, width, height]
 
             plot_with_cmap = next((p for p in all_plots if hasattr(p,'cmap')), None)
             if plot_with_cmap:
-                cbar = fig.colorbar(all_plots[0], cax=cbar_ax, orientation=cbar_orientation, label=cbar_label)
+                cbar = fig.colorbar(all_plots[0], cax=cbar_ax, orientation=cbar_orientation, label = cbar_labels[0] if len(cbar_labels) > 0 else None)
     
     # Add overall titles
     if suptitle:
@@ -610,6 +625,10 @@ def main(
 
 
 if __name__ == "__main__":
+
+    import argparse
+    import pickle
+
     parser = argparse.ArgumentParser(description="Process and visualize multiple NetCDF data files side by side.")
     
     input_group = parser.add_argument_group('Input Options')
@@ -618,7 +637,8 @@ if __name__ == "__main__":
     text_group = parser.add_argument_group('Text Options')
     line_group = parser.add_argument_group('Line Plot Options')
 
-    input_group.add_argument("-i", "--input_files", nargs='+', required=True, help="Paths to input NetCDF files.", action="extend")
+
+    input_group.add_argument("-i", "--input_files", nargs='+', help="Paths to input NetCDF files.", action="extend")
     input_group.add_argument("-s", "--sig_files", nargs='+', help="Paths to significance NetCDF files.", action="extend")
 
     output_group.add_argument("--dpi", help="DPI (dots per inches) of the output image.", type=int)
@@ -629,8 +649,8 @@ if __name__ == "__main__":
 
     plot_group.add_argument("-c", "--cmap", help="Use the colormap name or colormap file for plotting.", type=str)
     plot_group.add_argument("-C", "--cols", help="Max number of columns.", type=int)
-    plot_group.add_argument("-e", "--extent", nargs='+', help="Map extent of form: lonmin lonmax latmin latmax, or the string 'global' or 'ams'.", action="extend")
-    plot_group.add_argument("-L", "--levels", nargs='+', help="Levels used for plotting shaded contours.", type=float, action="extend")
+    plot_group.add_argument("-e", "--extent", help="Map extent string of form: 'lonmin lonmax latmin latmax', or the string 'global' or 'ams'.", type=str)
+    plot_group.add_argument("-L", "--levels", help="Level string used for plotting shaded contours. Each level separeted by blanks. Ex='-1 -.5 0 .5 1'",type=str)
     plot_group.add_argument("-v", "--var", help="Variable name in input NetCDF files", type=str)
     plot_group.add_argument("--use_cmap_in_plots", metavar = 'CMAP_STRING', nargs='+', help="Use alternative colormaps in specified plots {0,1,...}. %(metavar)s = 'CMAP:P1 P2 ...'. Ex: --use_cmap_in_plots='rainbow: 0 2 4'", type=str, action="extend")
     plot_group.add_argument("--use_levels_in_plots", metavar = 'LVL_STRING', nargs='+', help="Use alternative levels in specified plots {0,1,...}. %(metavar)s = 'LEVELS:P1 P2 ...'. Ex: --use_levels_in_plots='-100 -50 0 50 100:0 2 4'", type=str, action="extend")
@@ -641,7 +661,8 @@ if __name__ == "__main__":
     text_group.add_argument("-ct", "--col_titles", nargs='+', help="Column titles for the first row.", type=str, action="extend")
     text_group.add_argument("-rt", "--row_titles", nargs='+', help="Row titles in the middle of each row.", type=str, action="extend")
     text_group.add_argument("-l", "--labels", nargs='+', help="Label for each subplot.", type=str, action="extend")
-    text_group.add_argument("-f", "--title_fonts", nargs='+', help="Font family used in titles: FONTNAME, 'serif', 'sans-serif', 'cursive', 'fantasy', 'monospace'.", type=str, action="extend")
+    text_group.add_argument("--cbar_labels", nargs='+', help="Label for each cbar.", type=str, action="extend")
+    text_group.add_argument("-f", "--title_fonts", nargs='+', help="Font family used in titles: FONTNAME or {'serif', 'sans-serif', 'cursive', 'fantasy', 'monospace'}.", type=str, action="extend")
 
 
     show_hidden_args = any('-h' in a for a in sys.argv)
@@ -651,23 +672,24 @@ if __name__ == "__main__":
             kwargs['help'] = argparse.SUPPRESS
         opt.add_argument(*args, **kwargs)
 
-    add_hidden_argument(line_group, "--line_style"     , metavar = 'STYLE', help="Linestyle for Line Plot {dotted,dashed,solid,etc...}.")
-    add_hidden_argument(line_group, "--line_color"     , metavar = 'COLOR', help="Line color for Line Plot.")
-    add_hidden_argument(line_group, "--line_width"     , metavar = 'WIDTH', help="Line width for Line Plot.")
-    add_hidden_argument(line_group, "--line_marker"    , metavar = 'MARKER', help="Line marker for Line Plot.")
-    add_hidden_argument(line_group, "--line_gridline"  , metavar = 'STYLE', help="Linestyle of gridline for Line Plot {dotted,dashed,solid,etc...}.")
-    add_hidden_argument(line_group, "--line_tick_size" , metavar = 'SIZE', nargs='+', help="Text size of the ticks for Line Plot. Use '%(metavar)s' to set both x and y to the same value, or '%(metavar)s' '%(metavar)s' to set x and y individually.")
-    add_hidden_argument(line_group, "--line_numticks"  , metavar = 'NUM', nargs='+', help="Number of ticks for Line Plot. Use '%(metavar)s' to set both x and y to the same value, or '%(metavar)s' '%(metavar)s' to set x and y individually.")
-    add_hidden_argument(line_group, "--line_labels"    , metavar=('XLABEL','YLABEL'), nargs=2, help="Labels x and y for Line Plot.")
-    add_hidden_argument(line_group, "--line_label_size", metavar = 'SIZE', nargs='+', help="Label text size of Line Plot. Use '%(metavar)s' to set both x and y to the sa    me value, or '%(metavar)s' '%(metavar)s' to set x and y individually.")
-
+    add_hidden_argument(line_group, "--line_style"     , metavar = 'STYLE'  , help="Linestyle for Line Plot {dotted,dashed,solid,etc...}.", type=str)
+    add_hidden_argument(line_group, "--line_color"     , metavar = 'COLOR'  , help="Line color for Line Plot." , type=str)
+    add_hidden_argument(line_group, "--line_width"     , metavar = 'WIDTH'  , help="Line width for Line Plot." , type=float)
+    add_hidden_argument(line_group, "--line_marker"    , metavar = 'MARKER' , help="Line marker for Line Plot.", type=str)
+    add_hidden_argument(line_group, "--line_gridline"  , metavar = 'STYLE'  , help="Linestyle of gridline for Line Plot {dotted,dashed,solid,etc...}.", type=str)
+    add_hidden_argument(line_group, "--line_tick_size" , metavar = ('XSIZE' , 'YSIZE' ), nargs=2, help="Text size of the ticks for Line Plot.", type=float)
+    add_hidden_argument(line_group, "--line_numticks"  , metavar = ('XNUM'  , 'YNUM'  ), nargs=2, help="Number of ticks for Line Plot.", type=int)
+    add_hidden_argument(line_group, "--line_labels"    , metavar = ('XLABEL', 'YLABEL'), nargs=2, help="Labels for Line Plot.", type=str)
+    add_hidden_argument(line_group, "--line_label_size", metavar = ('XSIZE' , 'YSIZE' ), nargs=2, help="Label text size of Line Plot.", type=float)
 
 
     parser.add_argument("-q","--quiet", help="Supress options message.", action='store_true')
+    parser.add_argument("--pickle", help=argparse.SUPPRESS, type=argparse.FileType('wb'))
+    parser.add_argument("--unpickle", help=argparse.SUPPRESS, type=argparse.FileType('rb'))
     
 
     args, unknown = parser.parse_known_args()
-    kwargs_parser = argparse.ArgumentParser()
+    kwargs_parser = argparse.ArgumentParser(allow_abbrev=False)
 
     #https://stackoverflow.com/a/37367814
     for opt in unknown:
@@ -685,10 +707,32 @@ if __name__ == "__main__":
     #-    if v is not None:
     #-        args_dict[k]=v
 
-    # Validate that we have the same number of input and significance files
-    if args.sig_files is not None and len(args.input_files) != len(args.sig_files):
-        print("Warning: Number of input files don't match the number of significance files.",file=sys.stderr)
+
+
+    #---------- Pickle Processing -----------
+    class DictOnlyUnpickler(pickle.Unpickler):
+        def load(self):
+            obj = super().load()
+            if not isinstance(obj, dict):
+                raise TypeError("Only dict objects are allowed to be unpickled.")
+            return obj
+
+    # read arguments from file if specified
+    if (unpickle_handler := args_dict.pop('unpickle',None)) is not None:
+        unpickled_args = DictOnlyUnpickler(unpickle_handler).load()
+        args_dict = unpickled_args | args_dict
+    # save arguments to file if specified
+    if (pickle_handler := args_dict.pop('pickle',None)) is not None:
+        pickle.dump(args_dict, pickle_handler)
+    #----------------------------------------
+
+
+
+    # Validate that we have the number of input and significance files
+    if not args_dict.get('input_files'):
+        parser.error("At least one input file is required. use '--input_files' or '-i' to add.")
 
     print(args_dict)
+
 
     main(**args_dict)
